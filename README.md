@@ -1,3 +1,4 @@
+
 # MMA Benchmark — Multimodal Alignment Benchmark
 
 > A modular, extensible Python framework for benchmarking **training-free multimodal alignment methods** across classification and retrieval tasks. It evaluates how well independently trained unimodal encoders (image + text) can be aligned without joint training, using methods like **ASIF**, **CSA (CCA-Based Alignment)**, and **CKA (Centered Kernel Alignment)**.
@@ -6,81 +7,25 @@
 
 ## Table of Contents
 
-- [Architecture Overview](#architecture-overview)
 - [Project Structure](#project-structure)
 - [Core Concepts](#core-concepts)
-  - [Abstract Base Classes](#abstract-base-classes)
   - [Registry Pattern](#registry-pattern)
 - [Modules](#modules)
   - [Benchmark Orchestrator](#benchmark-orchestrator)
   - [Data Pipeline](#data-pipeline)
   - [Datasets](#datasets)
+    - [Adding a New Dataset](#adding-a-new-dataset)
+
   - [Metatasks](#metatasks)
   - [Alignment Methods](#alignment-methods)
+    - [Adding a New Alignment Method](#adding-a-new-alignment-method)
   - [Embedding Models](#embedding-models)
+    - [Adding a New Embedding Model](#adding-a-new-embedding-model)
 - [Configuration](#configuration)
 - [Usage](#usage)
   - [Running the Benchmark](#running-the-benchmark)
   - [Generating Embeddings](#generating-embeddings)
-- [Extending the Framework](#extending-the-framework)
-  - [Adding a New Dataset](#adding-a-new-dataset)
-  - [Adding a New Alignment Method](#adding-a-new-alignment-method)
-  - [Adding a New Embedding Model](#adding-a-new-embedding-model)
 - [Dependencies](#dependencies)
-
----
-
-## Architecture Overview
-
-```mermaid
-graph TB
-    subgraph Entry Points
-        RF[run_framework.py]
-        RE[run_embed_data.py]
-    end
-
-    subgraph Orchestration
-        BM[MMA_Benchmark]
-    end
-
-    subgraph Metatasks
-        CT[ClassificationTask]
-        RT[RetrievalTask]
-    end
-
-    subgraph Methods
-        ASIF[ASIFMethod]
-        CSA[CSAMethod]
-        CKA[CKAMethod]
-    end
-
-    subgraph Data Pipeline
-        LDR[Loader]
-        DR[Dataset Registry]
-        EMB[EmbeddingDataset]
-        HF[HuggingFace Hub]
-    end
-
-    subgraph Datasets
-        IN[ImageNet-1K]
-        FL[Flickr30k]
-        MC[MSCOCO]
-    end
-
-    subgraph Models
-        IE[Image Encoders]
-        TE[Text Encoders]
-    end
-
-    RF --> BM
-    BM --> CT & RT
-    CT & RT --> ASIF & CSA & CKA
-    RF --> LDR
-    LDR --> DR --> IN & FL & MC
-    IN & FL & MC --> EMB --> HF
-    RE --> Models
-    Models --> IE & TE
-```
 
 ---
 
@@ -131,16 +76,6 @@ Alignment_Benchmark/
 
 ## Core Concepts
 
-### Abstract Base Classes
-
-All pluggable components inherit from abstract interfaces defined in `base/base.py`:
-
-| Class | Purpose | Key Abstract Methods |
-|-------|---------|---------------------|
-| `AbsTask` | Defines an evaluation task | `run(method, model, **kwargs) → Dict` |
-| `AbsModel` | Defines a multimodal encoder | `encode_image(images) → ndarray`, `encode_text(text) → ndarray` |
-| `AbsMethod` | Defines an alignment method | `align(query_embeddings, support_embeddings, **kwargs) → ndarray` |
-
 ### Registry Pattern
 
 The framework uses a **registry pattern** across all major subsystems for plug-and-play extensibility:
@@ -167,43 +102,16 @@ Each registry maps string keys to classes/callables. Use the corresponding `list
 
 ```python
 class MMA_Benchmark:
-    def __init__(self, tasks: List[AbsTask])
-    def run(self, method: AbsMethod, model: AbsModel, support_embeddings=None, **kwargs) -> Dict[str, Dict[str, Any]]
+    def __init__(self, tasks: List[AbsTask], methods: Dict[str, AbsMethod], config: Dict[str, Any])
+    def run(self, model: AbsModel, support_embeddings=None, **kwargs) -> Dict[str, Dict[str, Any]]
     def add_task(self, task: AbsTask)
 ```
 
-It iterates over all registered tasks and calls `task.run(method, ...)`, collecting results by task name.
+It iterates over all registered tasks and **all configured methods**, instantiating each method with its config parameters and calling `task.run(method, ...)`. Results are collected by `"{task_name}-{method_name}"` key.
 
 ---
 
 ### Data Pipeline
-
-#### `DatasetBase` (`data/dataset_base.py`)
-
-Base class for raw dataset loading. Subclasses implement `load_data()` to parse image paths, captions, and labels.
-
-#### `EmbeddingDataset` (`data/dataset_base.py`)
-
-Companion base class for datasets that use pre-computed embeddings. Provides:
-
-| Method | Description |
-|--------|-------------|
-| `load_two_encoder_data(repo_id, img_name, text_name)` | Loads image & text embeddings from HuggingFace Hub |
-| `set_train_test_split_index(ratio, seed)` | Creates reproducible train/test splits |
-| `set_training_paired_embeddings()` | Builds aligned `(image, text)` pairs for training — *abstract, subclass-specific* |
-| `get_support_embeddings()` | Returns the `support_embeddings` dict (`train_image`, `train_text`, optionally `labels_emb`) |
-| `get_test_data()` | Returns test split data — *abstract, subclass-specific* |
-
-#### `dataset_utils.py`
-
-Utility functions for embedding I/O:
-
-| Function | Description |
-|----------|-------------|
-| `load_embeddings_from_hf(file, repo_id)` | Downloads & caches embeddings from HuggingFace Hub |
-| `validate_embeddings(embeddings, dims, min_samples)` | Validates array shape and type |
-| `upload_embeddings_to_hf(embeddings, path, api, repo_id, path_in_repo)` | Saves & uploads embeddings to HuggingFace |
-| `clear_embedding_cache()` | Clears the in-memory embedding cache |
 
 #### `loader.py`
 
@@ -230,6 +138,16 @@ End-to-end embedding generation pipeline. For each dataset:
 
 All datasets implement both `DatasetBase` (for raw data) and `EmbeddingDataset` (for precomputed embeddings) through multiple inheritance.
 
+The `EmbeddingDataset` base class provides:
+
+| Method | Description |
+|--------|-------------|
+| `load_two_encoder_data(repo_id, img_name, text_name)` | Loads image & text embeddings from HuggingFace Hub |
+| `set_train_test_split_index(ratio, seed)` | Creates reproducible train/test splits |
+| `set_training_paired_embeddings()` | Builds aligned `(image, text)` pairs for training — *abstract, subclass-specific* |
+| `get_support_embeddings()` | Returns the `support_embeddings` dict (`train_image`, `train_text`, optionally `labels_emb`) |
+| `get_test_data()` | Returns test split data — *abstract, subclass-specific* |
+
 #### ImageNet-1K (`datasets/imagenet1k/`)
 
 - **Task type:** Zero-shot classification
@@ -242,9 +160,10 @@ All datasets implement both `DatasetBase` (for raw data) and `EmbeddingDataset` 
 
 - **Task type:** Image-text retrieval
 - **Classes:** `Flickr30k` → `Flickr30kRetrievalDataset`
-- **Data source:** Flickr30k dataset with `captions.txt`
-- **Captions:** 5 captions per image
-- **Ground truth:** Maps images ↔ captions by position index
+- **Data source:** Flickr30k dataset with `captions.txt` (parsed via Polars)
+- **Captions:** 5 captions per image, sorted by length (descending) and grouped per image
+- **Ground truth:** Bidirectional mappings — `image_to_text_gt_ids` (each image → its 5 caption indices) and `text_to_image_gt_ids` (each caption → its source image index)
+- **Test data returns:** `(val_image_embeddings, val_text_embeddings, image_to_text_gt_ids, text_to_image_gt_ids)`
 
 #### MSCOCO (`datasets/mscoco/`)
 
@@ -252,6 +171,98 @@ All datasets implement both `DatasetBase` (for raw data) and `EmbeddingDataset` 
 - **Classes:** `MScoco` → `MScocoMultiLabelClassificationDataset`, `MScocoRetrievalDataset`
 - **Data source:** COCO train2017 with annotations JSONs
 - **Labels:** 80 object categories; 5 captions per image for retrieval
+
+### Adding a New Dataset
+
+To integrate a new dataset, create a dedicated directory under `datasets/` (e.g., `datasets/my_dataset/`) and implement the two-layer class hierarchy described below.
+
+#### Step 1 — Define the Raw Dataset Class
+
+Create a class that inherits from `DatasetBase` and implements the `load_data()` method. This method is responsible for loading raw data from disk into a structured format (typically a Polars DataFrame) with fields such as:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `image_path` | `str` | Absolute path to each image file |
+| `captions` | `List[str]` | Text captions associated with each image *(retrieval tasks)* |
+| `labels` / `label_id` | `str` / `int` | Class labels or indices *(classification tasks)* |
+
+> [!TIP]
+> See `Imagenet1k` in `datasets/imagenet1k/` for a classification example and `Flickr30k` in `datasets/flickr30k/` for a retrieval example.
+
+#### Step 2 — Define the Embedding Dataset Class
+
+Create a class that inherits from **both** your raw dataset class and `EmbeddingDataset` (multiple inheritance). This class bridges raw data with precomputed embeddings and must implement the following methods:
+
+| Method | Description |
+|--------|-------------|
+| `set_train_test_split_index(ratio, seed)` | Splits the dataset into train/test partitions. The default `EmbeddingDataset` implementation performs a random split based on the number of images — override only if your dataset requires custom splitting logic. |
+| `set_training_paired_embeddings()` | Builds two aligned NumPy arrays where the vector at index `i` in the image array is paired with the vector at index `i` in the text array. Store them in `self.support_embeddings` as `"train_image"` and `"train_text"`. |
+| `set_label_embeddings()` | *(Classification only)* Builds a NumPy array of label embeddings and stores it in `self.support_embeddings` as `"labels_emb"`. |
+| `get_support_embeddings()` | Returns the `self.support_embeddings` dictionary. The default implementation is usually sufficient. |
+| `get_test_data()` | Returns the test-split data. The return signature depends on the task type (see below). |
+
+**`get_test_data()` return values by task type:**
+
+- **Classification** — returns `(val_image_embeddings, val_labels)`:
+  - `val_image_embeddings`: `np.ndarray` — image embeddings for evaluation.
+  - `val_labels`: `np.ndarray` — ground-truth class indices for each test image.
+
+- **Retrieval** — returns `(val_image_embeddings, val_text_embeddings, image_to_text_gt_ids, text_to_image_gt_ids)`:
+  - `val_image_embeddings`: `np.ndarray` — image embeddings for evaluation.
+  - `val_text_embeddings`: `np.ndarray` — caption embeddings for evaluation.
+  - `image_to_text_gt_ids`: `Dict[int, List[int]]` — maps each image index to its ground-truth caption indices.
+  - `text_to_image_gt_ids`: `Dict[int, List[int]]` — maps each caption index to its ground-truth image indices.
+
+> [!TIP]
+> Refer to `Imagenet1kZeroshotClassificationDataset` for a complete classification implementation and `Flickr30kRetrievalDataset` for a retrieval implementation.
+
+```python
+# datasets/my_dataset/my_dataset.py
+from data.dataset_base import DatasetBase, EmbeddingDataset
+
+class MyRawDataset(DatasetBase):
+    def __init__(self, data_path):
+        super().__init__()
+        self.load_data(data_path)
+
+    def load_data(self, data_path):
+        # Load image paths, captions/labels, etc.
+        ...
+
+class MyDataset(MyRawDataset, EmbeddingDataset):
+    def __init__(self, task_config):
+        MyRawDataset.__init__(self, task_config.data_path)
+        EmbeddingDataset.__init__(self, split=task_config.split)
+        # Load embeddings, set splits, build support pairs
+        ...
+
+    def set_training_paired_embeddings(self):
+        # Build self.support_embeddings["train_image"] and ["train_text"]
+        ...
+
+    def get_test_data(self):
+        # Return test split data
+        ...
+```
+
+2. **Register it** in `data/__init__.py`:
+
+```python
+from datasets.my_dataset.my_dataset import MyDataset
+
+_DATASET_REGISTRY["my_dataset-classification"] = MyDataset
+```
+
+3. **Add config** in `config.py`:
+
+```python
+"my_dataset": {
+    "data_path": "/path/to/data",
+    "hf_repo_id": "...",
+    "metatask": "classification",
+    ...
+}
+```
 
 ---
 
@@ -273,8 +284,8 @@ Zero-shot classification flow:
 Image-text retrieval flow:
 
 1. If the method has a `retrieve()` method → call it directly
-2. Otherwise → call `method.align()`, then compute pairwise similarity, return top-K
-3. **Metrics:** P@1, P@5 (Precision at K)
+2. Otherwise → call `method.align()`, then compute pairwise similarity per query using `similarity_function()` (custom or cosine fallback), return top-K
+3. **Metrics:** P@1, P@5 (Precision at K), R@1, R@5 (Recall at K)
 
 ---
 
@@ -361,6 +372,43 @@ Uses local CKA to build a similarity graph between query pairs.
 
 ---
 
+#### Adding a New Alignment Method
+
+1. **Create the method class** inheriting from `AbsMethod`:
+
+```python
+# methods/my_method.py
+from base.base import AbsMethod
+
+class MyMethod(AbsMethod):
+    def __init__(self, param1=10):
+        super().__init__("MyMethod")
+        self.param1 = param1
+
+    def align(self, image_embeddings, text_embeddings, support_embeddings, **kwargs):
+        # Return (aligned_images, aligned_texts)
+        ...
+
+    # Optionally override classify() and retrieve() for task-specific logic
+```
+
+2. **Register it** in `methods/__init__.py`:
+
+```python
+from .my_method import MyMethod
+
+_METHOD_REGISTRY["my_method"] = MyMethod
+```
+
+3. **Add config** in `config.py`:
+
+```python
+"methods": ["asif", "csa", "my_method"],
+"my_method": { "param1": 10 },
+```
+
+---
+
 ### Embedding Models
 
 #### Image Encoders (`models/model.py`)
@@ -385,14 +433,26 @@ Additional models available in code but not in registry: `cosplace_img`, `dinov1
 | `alibaba_gte_en_v1_5` | Alibaba GTE | `gte-base-en-v1.5`, `gte-large-en-v1.5` |
 | `baai_bge_en_v1_5` | BAAI BGE | `bge-base-en-v1.5`, `bge-large-en-v1.5` |
 
-Additional models in code: `gte_qwen2_1_5B_instruct`.
+---
+#### Adding a New Embedding Model
 
-#### HFModelWrapper (`models/model_wrappers.py`)
+1. **Create the encoder function** in `models/model.py`:
 
-A generic wrapper implementing `AbsModel` for any HuggingFace model with both tokenizer and image processor support.
+```python
+def my_encoder(inputs: list, batch_size: int = 50, model_variant=None) -> np.ndarray:
+    # Load model, process inputs, return (embeddings, total_params)
+    ...
+```
+
+2. **Register it** in `models/__init__.py`:
+
+```python
+_IMAGE_EMBEDDING_MODEL_REGISTRY["my_encoder"] = my_encoder
+# or
+_TEXT_EMBEDDING_MODEL_REGISTRY["my_encoder"] = my_encoder
+```
 
 ---
-
 ## Configuration
 
 All configuration is centralized in `config.py` as a Python dictionary, converted to an `OmegaConf` `DictConfig` at runtime.
@@ -432,8 +492,8 @@ config = {
     },
     "flickr30k": {
         "dataset_path": "/path/to/flickr30k",
-        "hf_img_embedding_name": "flickr30k_dinov2_dinov2-large_image_embeddings.pkl",
-        "hf_text_embedding_name": "flickr30k_gtr_t5_gtr-t5-xl_text_embeddings.pkl",
+        "hf_img_embedding_name": "flickr30k_dinov2_dinov2-giant_image_embeddings.pkl",
+        "hf_text_embedding_name": "flickr30k_gtr_t5_gtr-t5-large_text_embeddings.pkl",
         "hf_repo_id": "ridalefdali/flickr30k_embeddings",
         "train_test_ratio": 0.7,
         "seed": 42,
@@ -448,8 +508,8 @@ config = {
     "embedding_model": {
         "img_encoder": "dinov2",
         "text_encoder": "gtr_t5",
-        "image_model_variant": "dinov2-large",
-        "text_model_variant": "gtr-t5-xl",
+        "image_model_variant": "dinov2-giant",
+        "text_model_variant": "gtr-t5-large",
         "batch_size": 50,
     }
 }
@@ -480,14 +540,13 @@ python run_framework.py
 
 **Pipeline flow:**
 
-1. Reads `config.py`
+1. Reads `config.py` and converts it to an OmegaConf `DictConfig`
 2. For each task in `config.tasks`:
-   - Loads the dataset + wraps it in the corresponding metatask
-3. Creates `MMA_Benchmark(tasks)`
-4. For each method in `config.methods`:
-   - Instantiates the method with its config parameters
-   - Calls `benchmark.run(method=method, model=None, support_embeddings=...)`
-5. Prints results per method
+   - Loads the dataset + wraps it in the corresponding metatask via `load_dataset_metatask()`
+3. Resolves all method classes from `config.methods` via `get_method_class()`
+4. Creates `MMA_Benchmark(tasks, methods, config)`
+5. Calls `benchmark.run(model=None, support_embeddings=...)` — internally iterates over all task×method combinations, instantiating each method with its config parameters
+6. Prints the combined results dict (keyed by `"{task_name}-{method_name}"`)
 
 ### Generating Embeddings
 
@@ -500,119 +559,6 @@ For each task in `config.tasks`, with `generate_embedding: True`:
 2. Encodes images using the configured image encoder
 3. Encodes text (captions or label descriptions) using the configured text encoder
 4. Uploads both embedding files to the specified HuggingFace repository
-
----
-
-## Extending the Framework
-
-### Adding a New Dataset
-
-1. **Create the dataset class** inheriting from `DatasetBase` and `EmbeddingDataset`:
-
-```python
-# datasets/my_dataset/my_dataset.py
-from data.dataset_base import DatasetBase, EmbeddingDataset
-
-class MyRawDataset(DatasetBase):
-    def __init__(self, data_path):
-        super().__init__()
-        self.load_data(data_path)
-
-    def load_data(self, data_path):
-        # Load image paths, captions/labels, etc.
-        ...
-
-class MyDataset(MyRawDataset, EmbeddingDataset):
-    def __init__(self, task_config):
-        MyRawDataset.__init__(self, task_config.data_path)
-        EmbeddingDataset.__init__(self, split=task_config.split)
-        # Load embeddings, set splits, build support pairs
-        ...
-
-    def set_training_paired_embeddings(self):
-        # Build self.support_embeddings["train_image"] and ["train_text"]
-        ...
-
-    def get_test_data(self):
-        # Return test split data
-        ...
-```
-
-2. **Register it** in `data/__init__.py`:
-
-```python
-from datasets.my_dataset.my_dataset import MyDataset
-
-_DATASET_REGISTRY["my_dataset-classification"] = MyDataset
-```
-
-3. **Add config** in `config.py`:
-
-```python
-"my_dataset": {
-    "data_path": "/path/to/data",
-    "hf_repo_id": "...",
-    "metatask": "classification",
-    ...
-}
-```
-
----
-
-### Adding a New Alignment Method
-
-1. **Create the method class** inheriting from `AbsMethod`:
-
-```python
-# methods/my_method.py
-from base.base import AbsMethod
-
-class MyMethod(AbsMethod):
-    def __init__(self, param1=10):
-        super().__init__("MyMethod")
-        self.param1 = param1
-
-    def align(self, image_embeddings, text_embeddings, support_embeddings, **kwargs):
-        # Return (aligned_images, aligned_texts)
-        ...
-
-    # Optionally override classify() and retrieve() for task-specific logic
-```
-
-2. **Register it** in `methods/__init__.py`:
-
-```python
-from .my_method import MyMethod
-
-_METHOD_REGISTRY["my_method"] = MyMethod
-```
-
-3. **Add config** in `config.py`:
-
-```python
-"methods": ["asif", "csa", "my_method"],
-"my_method": { "param1": 10 },
-```
-
----
-
-### Adding a New Embedding Model
-
-1. **Create the encoder function** in `models/model.py`:
-
-```python
-def my_encoder(inputs: list, batch_size: int = 50, model_variant=None) -> np.ndarray:
-    # Load model, process inputs, return (embeddings, total_params)
-    ...
-```
-
-2. **Register it** in `models/__init__.py`:
-
-```python
-_IMAGE_EMBEDDING_MODEL_REGISTRY["my_encoder"] = my_encoder
-# or
-_TEXT_EMBEDDING_MODEL_REGISTRY["my_encoder"] = my_encoder
-```
 
 ---
 

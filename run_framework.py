@@ -17,19 +17,21 @@ def test_framework():
     for task in config.tasks:
         tasks.append(load_dataset_metatask(task, config))
     support_embeddings = None
-    # 3. Create Benchmark
-    benchmark = MMA_Benchmark(tasks=tasks)
+    
     
     # 4. Create Method dynamically from config
     # Example: config.method_name = "asif" or "csa"
+    methods = {}
     for method_name in config.methods:
         MethodClass = get_method_class(method_name)
-        method = MethodClass(**config[method_name])
-        
-        # 5. Run Benchmark
-        results = benchmark.run(method=method, model=None, support_embeddings=support_embeddings)
-        
-        print(f"{method_name.upper()} Results:", results)
+        methods[method_name] = MethodClass
+
+    # 3. Create Benchmark
+    benchmark = MMA_Benchmark(tasks=tasks, methods=methods, config=config)
+    # 5. Run Benchmark
+    results = benchmark.run(model=None, support_embeddings=support_embeddings)
+    
+    print(f"Results:", results)
 
 if __name__ == "__main__":
     test_framework()

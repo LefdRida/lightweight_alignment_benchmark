@@ -3,6 +3,8 @@ from typing import Dict, Any, Optional
 from base.base import AbsMethod
 # Importing from original structure
 from methods.csa_core import NormalizedCCA
+import torch
+import torch.nn.functional as F
 
 class CSAMethod(AbsMethod):
     """CSA (CCA-based) alignment technique."""
@@ -52,20 +54,28 @@ class CSAMethod(AbsMethod):
         Return:
             similarity matrix between x and y. shape: (N, )
         """
-        assert (
-            x.shape == y.shape
-        ), f"x and y should have the same number of shape, but got {x.shape} and {y.shape}"
+        #assert (
+        #    x.shape == y.shape
+        #), f"x and y should have the same number of shape, but got {x.shape} and {y.shape}"
         corr: np.ndarray = self.cca.corr_coeff
         dim: int = self.cca.sim_dim
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # select the first dim dimensions
         x, y, corr = x[:, :dim], y[:, :dim], corr[:dim]
         # normalize x and y with L2 norm
-        x = x / np.linalg.norm(x, axis=1, keepdims=True)
-        y = y / np.linalg.norm(y, axis=1, keepdims=True)
+        #x = x / np.linalg.norm(x, axis=1, keepdims=True)
+        #y = y / np.linalg.norm(y, axis=1, keepdims=True)
         # compute the similarity scores
         sim = np.zeros(x.shape[0])
-        for ii in range(x.shape[0]):
-            sim[ii] = corr * x[ii] @ y[ii]
+        corr = torch.tensor(corr).reshape(1, -1).to(device)
+        x = torch.tensor(x).to(device)
+        y = torch.tensor(y).to(device)
+
+        x = F.normalize(x, p=2, dim=1)
+        y = F.normalize(y, p=2, dim=1)
+
+        sim = (corr * x @ y.T).view(-1)
+
         return sim
     
     def get_similarity_function(self):

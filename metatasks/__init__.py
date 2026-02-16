@@ -50,13 +50,13 @@ def _create_retrieval_task(
     Returns:
         RetrievalTask instance
     """
-    val_img, val_txt, gt_caption_ids, gt_img_ids = dataset.get_test_data()
+    val_img, val_txt, image_to_text_gt_ids, text_to_image_gt_ids = dataset.get_test_data()
     
     return RetrievalTask(
         name=f"{dataset_name}-Retrieval",
         queries=val_img,
         documents=val_txt,
-        gt_ids=gt_img_ids,
+        gt_ids=image_to_text_gt_ids,
         support_embeddings=support_embeddings,
         topk=metatask_config.topk,
         num_gt=metatask_config.num_gt

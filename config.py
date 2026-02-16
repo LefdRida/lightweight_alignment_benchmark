@@ -1,14 +1,14 @@
 config = {
-    "tasks": ["imagenet1k", "flickr30k"], # dataset_name
+    "tasks": ["flickr30k"], # dataset_name
     "methods": ["asif", "csa"],  # Method to use: "asif", "csa", or "cka"
     "csa":{
-        "sim_dim": 700,
+        "sim_dim": 250,
     },
     "asif":{
         "non_zeros": 800,
     },
     "retrieval":{
-        "topk": 10,
+        "topk": 5,
         "num_gt": 5,
     },
     "classification":{
@@ -30,8 +30,8 @@ config = {
     },
     "flickr30k": {
         "dataset_path": "/home/rida.lefdali/work/dataset/flickr30k",
-        "hf_img_embedding_name": "flickr30k_dinov2_dinov2-large_image_embeddings.pkl", 
-        "hf_text_embedding_name": "flickr30k_gtr_t5_gtr-t5-xl_text_embeddings.pkl", 
+        "hf_img_embedding_name": "flickr30k_dinov2_dinov2-giant_image_embeddings.pkl", 
+        "hf_text_embedding_name": "flickr30k_gtr_t5_gtr-t5-large_text_embeddings.pkl", 
         "hf_repo_id": "ridalefdali/flickr30k_embeddings", 
         "train_test_ratio": 0.7,
         "seed": 42,
@@ -57,8 +57,8 @@ config = {
     "embedding_model": {
         "img_encoder": "dinov2", 
         "text_encoder": "gtr_t5", 
-        "image_model_variant": "dinov2-large",
-        "text_model_variant": "gtr-t5-xl",
+        "image_model_variant": "dinov2-giant",
+        "text_model_variant": "gtr-t5-large",
         "batch_size": 50,
     }
 }

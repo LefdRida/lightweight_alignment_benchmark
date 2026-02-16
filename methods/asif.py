@@ -20,7 +20,7 @@ class ASIFMethod(AbsMethod):
     def retrieve(
         self,
         queries: np.ndarray,
-        gt_document_ids: np.ndarray,
+        gt_ids: np.ndarray,
         documents: np.ndarray,
         support_embeddings: Dict[str, np.ndarray],
         topk: int = 5,
@@ -28,7 +28,8 @@ class ASIFMethod(AbsMethod):
         **kwargs
     ) -> np.ndarray:
         assert topk >= num_gt, "topk should be more than num_gt"
-        assert gt_document_ids.shape[0] == documents.shape[0], "gt_document_ids and documents should have the same number of samples"
+
+        assert len(gt_ids) == len(queries), "gt_ids and documents should have the same number of samples"
         
         non_zeros = min(self.non_zeros, support_embeddings['train_image'].shape[0])
         range_anch = [
@@ -38,13 +39,14 @@ class ASIFMethod(AbsMethod):
                 int(np.log2(len(support_embeddings['train_image']))) + 2,
             )
         ]
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         range_anch = range_anch[-1:]  # run just last anchor to be quick
         val_labels = torch.zeros((1,), dtype=torch.float32)
         _, _, sim_score_matrix = self.similarity_function(
-            torch.tensor(queries, dtype=torch.float32),
-            torch.tensor(documents, dtype=torch.float32),
-            torch.tensor(support_embeddings['train_image'], dtype=torch.float32),
-            torch.tensor(support_embeddings['train_text'], dtype=torch.float32),
+            torch.tensor(queries, dtype=torch.float32).to(device),
+            torch.tensor(documents, dtype=torch.float32).to(device),
+            torch.tensor(support_embeddings['train_image'], dtype=torch.float32).to(device),
+            torch.tensor(support_embeddings['train_text'], dtype=torch.float32).to(device),
             val_labels,
             non_zeros,
             range_anch,
@@ -56,18 +58,14 @@ class ASIFMethod(AbsMethod):
         
         self.sim_scores = []
         self.all_hit = []
-        for idx in range(0, queries.shape[0]):
-            gt_query_ids = gt_document_ids[idx*num_gt:(idx+1)*num_gt]
-            # copy the test text to the number of images
+        for idx in range(queries.shape[0]):
+            gt_query_ids = gt_ids[idx]
             sim_score = sim_score_matrix[idx, :]
-
-            # sort the similarity score in descending order and get the index
-            sim_top_idx = np.argpartition(sim_score, -num_gt)[-num_gt :]
+            sim_top_idx = np.argpartition(sim_score, -topk)[-topk :]
             sim_top_idx = sim_top_idx[np.argsort(sim_score[sim_top_idx])[::-1]]
-            hit = np.zeros((topk, num_gt))
-            for jj in range(num_gt):
-                for ii in range(topk):
-                    hit[ii, jj] = 1 if gt_query_ids[jj] == gt_document_ids[sim_top_idx[ii]] else 0
+            hit = np.zeros(topk)
+            for jj, top_idx in enumerate(sim_top_idx):
+                hit[jj] = 1 if top_idx in gt_query_ids else 0        
             self.all_hit.append(hit)
             self.sim_scores.append(sim_score)
         return self.all_hit
